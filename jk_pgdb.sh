@@ -54,6 +54,34 @@ else
 		fi
 		echo ${delay_time}
 	fi
+	#长事务
+	if [[ ${LONG_TRAN_MON} == "Y" ]]; then
+		IFS=$'\n'
+		for line in `psql -t -c "SELECT pid,usename,datname,to_char(xact_start,'yyyy-mm-dd hh24:mi:ss') xact_start FROM pg_stat_activity where state <> 'idle' and (backend_xid is not null or backend_xmin is not null) and extract(epoch from (clock_timestamp()-xact_start)) > ${LONG_TRAN_ALERT}"`;do
+			tpid=`echo $line|awk -F "|" '{print $1}'`
+			tusename=`echo $line|awk -F "|" '{print $2}'`
+			tdatname=`echo $line|awk -F "|" '{print $3}'`
+			txact_start=`echo $line|awk -F "|" '{print $4}'`
+			if [[ ${tpid} ]]; then
+				ms_info="Long transaction:${tdatname} start at ${txact_start} pid is:${tpid}"
+				callsendms long_tran "${ms_info}"
+			fi
+		done
+		IFS=$OLD_IFS
+	fi
+	#账号过期
+	if [[ ${USER_EXPIRED_MON} =="Y" ]]; then
+		IFS=$'\n'
+		for line in `psql -t -c "select usename,valuntil::date from pg_user where trunc(extract(day FROM (age(valuntil::date , now()::date)))::numeric) < ${USER_EXPIRED_ALERT};"`;do
+			usename=`echo $line|awk -F "|" '{print $1}'`
+			valuntil=`echo $line|awk -F "|" '{print $2}'`
+			if [[ ${usename} ]]; then
+				ms_info="User expire: ${usename} will expired at ${valuntil}"
+				callsendms user_expire "${ms_info}"
+			fi
+		done
+		IFS=$OLD_IFS
+	fi
 fi
 
 echo `date '+%y-%m-%d %H:%M:%S': `"$0 executed."
