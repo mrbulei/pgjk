@@ -10,7 +10,7 @@ OLD_IFS=$IFS
 function callsendms(){
 	ssh -p ${SSHPORT} $MSUSER@$MSHOST "cat ${REMODIR}/phone |grep ${hostname}|grep ${PUBIP}|grep $1 > ${REMODIR}/tmp/phone#${hostname}#${PUBIP}#$1.tmp" #生成临时文件
 	# echo "${REMODIR}/phone ${hostname} ${PUBIP} $1 ${REMODIR}/tmp/phone#${hostname}#$1.tmp"
-	ssh -p ${SSHPORT} $MSUSER@$MSHOST "sh ${REMODIR}/pgsendms.sh ${hostname} \"$2\" ${REMODIR}/tmp/phone#${hostname}#${PUBIP}#$1.tmp" #执行远程shell发送短信
+	ssh -p ${SSHPORT} $MSUSER@$MSHOST "sh ${REMODIR}/pgsendms.sh ${hostname} ${PUBIP} \"$2\" ${REMODIR}/tmp/phone#${hostname}#${PUBIP}#$1.tmp" #执行远程shell发送短信
 	# echo "${REMODIR}/pgsendms.sh \"$2\" ${REMODIR}/tmp/phone#${hostname}#$1.tmp"
 	ssh -p ${SSHPORT} $MSUSER@$MSHOST "rm -f ${REMODIR}/tmp/phone#${hostname}#${PUBIP}#$1.tmp"
 }
@@ -21,7 +21,7 @@ if [[ $is_alive -eq 0 ]]; then
 	ms_info="isalive: database is down"
 	callsendms is_alive ms_info
 else
-	echo "pg is ok"
+	# echo "pg is ok"
 	#链接数
 	if [[ ${CONN_NUM_MON} == "Y" ]]; then
 		conn_num=`psql -t -q -c "select count(*) from pg_stat_activity;"`
@@ -29,7 +29,7 @@ else
 			ms_info="Number of connections: ${conn_num}"
 			callsendms conn_num "${ms_info}"
 		fi
-		echo ${conn_num}
+		# echo ${conn_num}
 	fi
 	#等待事件
 	if [[ ${WAIT_NUM_MON} == "Y" ]]; then
@@ -41,7 +41,7 @@ else
 				ms_info="Wait event: ${wait_name} ${wait_count}"
 				callsendms wait_num "${ms_info}"
 			fi
-			echo ${wait_name} ${wait_count} 
+			# echo ${wait_name} ${wait_count} 
 		done
 		IFS=$OLD_IFS
 	fi
@@ -52,7 +52,7 @@ else
 			ms_info="Delay time: ${delay_time} (second)"
 			callsendms delay_time "${ms_info}"
 		fi
-		echo ${delay_time}
+		# echo ${delay_time}
 	fi
 	#长事务
 	if [[ ${LONG_TRAN_MON} == "Y" ]]; then
@@ -70,7 +70,7 @@ else
 		IFS=$OLD_IFS
 	fi
 	#账号过期
-	if [[ ${USER_EXPIRED_MON} =="Y" ]]; then
+	if [[ ${USER_EXPIRED_MON} == "Y" ]]; then
 		IFS=$'\n'
 		for line in `psql -t -c "select usename,valuntil::date from pg_user where trunc(extract(day FROM (age(valuntil::date , now()::date)))::numeric) < ${USER_EXPIRED_ALERT};"`;do
 			usename=`echo $line|awk -F "|" '{print $1}'`
