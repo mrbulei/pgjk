@@ -14,7 +14,14 @@ function callsendms(){
 	# echo "${REMODIR}/pgsendms.sh \"$2\" ${REMODIR}/tmp/phone#${hostname}#$1.tmp"
 	ssh -p ${SSHPORT} $MSUSER@$MSHOST "rm -f ${REMODIR}/tmp/phone#${hostname}#${PUBIP}#$1.tmp"
 }
-
+#设置计数器，控制各项监控频率
+if [[ ! -f counters.tmp ]]; then
+	echo 0 > counters.tmp
+	counter=0
+else
+	counter=`cat counters.tmp`
+	#statements
+fi
 ###是否存活
 is_alive=`pg_isready -p ${DBPORT}|grep "accepting"|wc -l `
 if [[ $is_alive -eq 0 ]]; then
@@ -23,7 +30,7 @@ if [[ $is_alive -eq 0 ]]; then
 else
 	# echo "pg is ok"
 	#链接数
-	if [[ ${CONN_NUM_MON} == "Y" ]]; then
+	if [[ ${CONN_NUM_MON} == "Y" && $(( ${counter} % ${CONN_NUM_FRE} )) == 0 ]]; then
 		conn_num=`psql -t -q -c "select count(*) from pg_stat_activity;"`
 		if [[ ${conn_num} -ge ${CONN_NUM_ALERT} ]]; then
 			ms_info="Number of connections: ${conn_num}"
@@ -32,7 +39,7 @@ else
 		# echo ${conn_num}
 	fi
 	#等待事件
-	if [[ ${WAIT_NUM_MON} == "Y" ]]; then
+	if [[ ${WAIT_NUM_MON} == "Y" && $(( ${counter} % ${WAIT_NUM_PRE} )) == 0 ]]; then
 		IFS=$'\n'
 		for line in `psql -t -c "select wait_event,count(*) from pg_stat_activity where wait_event is not null and wait_event not in ('ClientRead') group by wait_event;"`; do
 			wait_name=`echo $line|awk -F "|" '{print $1}'`
@@ -46,7 +53,7 @@ else
 		IFS=$OLD_IFS
 	fi
 	#备库查看事务延迟
-	if [ ${IS_MASTER} == "N" -a ${DELAY_MON} == "Y" ]; then
+	if [[ ${IS_MASTER} == "N" && ${DELAY_MON} == "Y" && $(( ${counter} % ${DELAY_PRE} )) == 0 ]]; then
 		delay_time=`psql -t -c "select trunc(extract(epoch from now() - pg_last_xact_replay_timestamp()));"`
 		if [[ ${delay_time} -ge ${DELAY_ALERT} ]]; then
 			ms_info="Delay time: ${delay_time} (second)"
@@ -55,7 +62,7 @@ else
 		# echo ${delay_time}
 	fi
 	#长事务
-	if [[ ${LONG_TRAN_MON} == "Y" ]]; then
+	if [[ ${LONG_TRAN_MON} == "Y" && $(( ${counter} % ${LONG_TRAN_PRE} )) == 0 ]]; then
 		IFS=$'\n'
 		for line in `psql -t -c "SELECT pid,usename,datname,to_char(xact_start,'yyyy-mm-dd hh24:mi:ss') xact_start FROM pg_stat_activity where state <> 'idle' and (backend_xid is not null or backend_xmin is not null) and extract(epoch from (clock_timestamp()-xact_start)) > ${LONG_TRAN_ALERT}"`;do
 			tpid=`echo $line|awk -F "|" '{print $1}'`
@@ -70,7 +77,7 @@ else
 		IFS=$OLD_IFS
 	fi
 	#账号过期
-	if [[ ${USER_EXPIRED_MON} == "Y" ]]; then
+	if [[ ${USER_EXPIRED_MON} == "Y" && $(( ${counter} % ${USER_EXPIRED_PRE} )) == 0 ]]; then
 		IFS=$'\n'
 		for line in `psql -t -c "select usename,valuntil::date from pg_user where trunc(extract(day FROM (age(valuntil::date , now()::date)))::numeric) < ${USER_EXPIRED_ALERT};"`;do
 			usename=`echo $line|awk -F "|" '{print $1}'`
@@ -83,5 +90,6 @@ else
 		IFS=$OLD_IFS
 	fi
 fi
-
+let counter+=1
+echo $counter > counters.tmp
 echo `date '+%y-%m-%d %H:%M:%S': `"$0 executed."
