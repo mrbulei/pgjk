@@ -14,8 +14,17 @@ function callsendms(){
 	ssh -p ${SSHPORT} $MSUSER@$MSHOST "rm -f ${REMODIR}/tmp/phone#${hostname}#${PUBIP}#$1.tmp"
 }
 
+#设置计数器，控制各项监控频率
+if [[ ! -f oscounters.tmp ]]; then
+	echo 0 > oscounters.tmp
+	counter=0
+else
+	counter=`cat oscounters.tmp`
+	#statements
+fi
+
 ###cpu
-if [[ ${CPU_MON} == "Y" ]];then
+if [[ ${CPU_MON} == "Y" && $(( ${counter} % ${CPU_PER} )) == 0 ]];then
 	cpu_usage=`vmstat 1 5 |sed -n '3,7p'|awk '{sum+=$15}END{print 100-sum/NR}'`
 	# wait
 	if [ `echo "${cpu_usage} >= ${CPU_ALERT}"|bc` -eq 1 ];then
@@ -25,7 +34,7 @@ if [[ ${CPU_MON} == "Y" ]];then
 fi
 
 ###mem
-if [[ ${MEM_MON} == "Y" ]];then
+if [[ ${MEM_MON} == "Y" && $(( ${counter} % ${MEM_PER} )) == 0 ]];then
 	mem_usage=`free |grep Mem |awk '{print ($2-$7)/($2)*100}'`
 	if [ `echo "${mem_usage} >= ${MEM_ALERT}"|bc` -eq 1 ];then
 		ms_info="Memory usage: ${mem_usage}%"
@@ -35,7 +44,7 @@ fi
 
 ##file system
 
-if [[ ${FS_USAGE_MON} == "Y" ]];then
+if [[ ${FS_USAGE_MON} == "Y" && $(( ${counter} % ${FS_USAGE_PER} )) == 0 ]];then
 	IFS=$'\n'
 	for line in `df -hT|sed -n '2,$p'|grep -v "tmpfs"` ;do
 		# fs_usage=`echo $line |awk '{if($2!="tmpfs")print $6}'|awk -F '%' '{print $1}'`
@@ -49,5 +58,6 @@ if [[ ${FS_USAGE_MON} == "Y" ]];then
 	done
 	IFS=$OLD_IFS
 fi
-
+let counter+=1
+echo $counter > oscounters.tmp
 echo `date '+%y-%m-%d %H:%M:%S': `"$0 executed."

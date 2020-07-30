@@ -15,13 +15,16 @@ function callsendms(){
 	ssh -p ${SSHPORT} $MSUSER@$MSHOST "rm -f ${REMODIR}/tmp/phone#${hostname}#${PUBIP}#$1.tmp"
 }
 #设置计数器，控制各项监控频率
-if [[ ! -f counters.tmp ]]; then
-	echo 0 > counters.tmp
+if [[ ! -f dbcounters.tmp ]]; then
+	echo 0 > dbcounters.tmp
 	counter=0
 else
-	counter=`cat counters.tmp`
+	counter=`cat dbcounters.tmp`
 	#statements
 fi
+###判断主从
+is_recovery=`psql -c "SELECT pg_is_in_recovery();"`
+
 ###是否存活
 is_alive=`pg_isready -p ${DBPORT}|grep "accepting"|wc -l `
 if [[ $is_alive -eq 0 ]]; then
@@ -53,7 +56,7 @@ else
 		IFS=$OLD_IFS
 	fi
 	#备库查看事务延迟
-	if [[ ${IS_MASTER} == "N" && ${DELAY_MON} == "Y" && $(( ${counter} % ${DELAY_PRE} )) == 0 ]]; then
+	if [[ ${is_recovery} == "t" && ${DELAY_MON} == "Y" && $(( ${counter} % ${DELAY_PRE} )) == 0 ]]; then
 		delay_time=`psql -t -c "select trunc(extract(epoch from now() - pg_last_xact_replay_timestamp()));"`
 		if [[ ${delay_time} -ge ${DELAY_ALERT} ]]; then
 			ms_info="Delay time: ${delay_time} (second)"
@@ -91,5 +94,5 @@ else
 	fi
 fi
 let counter+=1
-echo $counter > counters.tmp
+echo $counter > dbcounters.tmp
 echo `date '+%y-%m-%d %H:%M:%S': `"$0 executed."
