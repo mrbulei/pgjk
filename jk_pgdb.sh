@@ -22,8 +22,6 @@ else
 	counter=`cat dbcounters.tmp`
 	#statements
 fi
-###判断主从
-is_recovery=`psql -c "SELECT pg_is_in_recovery();"`
 
 ###是否存活
 is_alive=`pg_isready -p ${DBPORT}|grep "accepting"|wc -l `
@@ -31,6 +29,9 @@ if [[ $is_alive -eq 0 ]]; then
 	ms_info="isalive: database is down"
 	callsendms is_alive ms_info
 else
+	###判断主从
+	is_recovery=`psql -c "SELECT pg_is_in_recovery();"`
+
 	# echo "pg is ok"
 	#链接数
 	if [[ ${CONN_NUM_MON} == "Y" && $(( ${counter} % ${CONN_NUM_FRE} )) == 0 ]]; then
