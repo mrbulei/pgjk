@@ -39,7 +39,7 @@ if [[ $is_alive -eq 0 ]]; then
 	callsendms is_alive ms_info
 else
 	###判断主从
-	is_recovery=`psql -c -t "SELECT pg_is_in_recovery();"`
+	is_recovery=`psql -t -c "SELECT pg_is_in_recovery();"`
 
 	# echo "pg is ok"
 	#链接数
