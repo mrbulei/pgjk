@@ -23,6 +23,15 @@ else
 	#statements
 fi
 
+#备份告警
+# if [[ -f ${current_path}/backupflag ]]; then
+# 	ms_info=`cat ${current_path}/backupflag`
+# 	callsendms back_stat ${ms_info}
+# else
+# 	ms_info="Backup not performed"
+# 	callsendms back_stat 
+# fi
+
 ###是否存活
 is_alive=`pg_isready -p ${DBPORT}|grep "accepting"|wc -l `
 if [[ $is_alive -eq 0 ]]; then
@@ -30,7 +39,7 @@ if [[ $is_alive -eq 0 ]]; then
 	callsendms is_alive ms_info
 else
 	###判断主从
-	is_recovery=`psql -c "SELECT pg_is_in_recovery();"`
+	is_recovery=`psql -c -t "SELECT pg_is_in_recovery();"`
 
 	# echo "pg is ok"
 	#链接数
@@ -57,13 +66,12 @@ else
 		IFS=$OLD_IFS
 	fi
 	#备库查看事务延迟
-	if [[ ${is_recovery} == "t" && ${DELAY_MON} == "Y" && $(( ${counter} % ${DELAY_PRE} )) == 0 ]]; then
+	if [[ ${is_recovery} =~ "t" && ${DELAY_MON} == "Y" && $(( ${counter} % ${DELAY_PRE} )) == 0 ]]; then
 		delay_time=`psql -t -c "select trunc(extract(epoch from now() - pg_last_xact_replay_timestamp()));"`
 		if [[ ${delay_time} -ge ${DELAY_ALERT} ]]; then
 			ms_info="Delay time: ${delay_time} (second)"
 			callsendms delay_time "${ms_info}"
 		fi
-		# echo ${delay_time}
 	fi
 	#长事务
 	if [[ ${LONG_TRAN_MON} == "Y" && $(( ${counter} % ${LONG_TRAN_PRE} )) == 0 ]]; then
@@ -83,7 +91,7 @@ else
 	#账号过期
 	if [[ ${USER_EXPIRED_MON} == "Y" && $(( ${counter} % ${USER_EXPIRED_PRE} )) == 0 ]]; then
 		IFS=$'\n'
-		for line in `psql -t -c "select usename,valuntil::date from pg_user where trunc(extract(day FROM (age(valuntil::date , now()::date)))::numeric) < ${USER_EXPIRED_ALERT};"`;do
+		for line in `psql -t -c "select usename,valuntil::date from pg_user where valuntil <> 'infinity' OR valuntil IS NULL and trunc(extract(day FROM (age(valuntil::date , now()::date)))::numeric) < ${USER_EXPIRED_ALERT};"`;do
 			usename=`echo $line|awk -F "|" '{print $1}'`
 			valuntil=`echo $line|awk -F "|" '{print $2}'`
 			if [[ ${usename} ]]; then
