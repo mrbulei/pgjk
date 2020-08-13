@@ -16,10 +16,10 @@ function callsendms(){
 }
 #设置计数器，控制各项监控频率
 if [[ ! -f dbcounters.tmp ]]; then
-	echo 0 > dbcounters.tmp
+	echo 0 > ${current_path}/dbcounters.tmp
 	counter=0
 else
-	counter=`cat dbcounters.tmp`
+	counter=`cat ${current_path}/dbcounters.tmp`
 	#statements
 fi
 
@@ -36,7 +36,7 @@ fi
 is_alive=`pg_isready -p ${DBPORT}|grep "accepting"|wc -l `
 if [[ $is_alive -eq 0 ]]; then
 	ms_info="isalive: database is down"
-	callsendms is_alive ms_info
+	callsendms is_alive "${ms_info}"
 else
 	###判断主从
 	is_recovery=`psql -t -c "SELECT pg_is_in_recovery();"`
@@ -66,12 +66,42 @@ else
 		IFS=$OLD_IFS
 	fi
 	#备库查看事务延迟
-	if [[ ${is_recovery} =~ "t" && ${DELAY_MON} == "Y" && $(( ${counter} % ${DELAY_PRE} )) == 0 ]]; then
-		delay_time=`psql -t -c "select trunc(extract(epoch from now() - pg_last_xact_replay_timestamp()));"`
-		if [[ ${delay_time} -ge ${DELAY_ALERT} ]]; then
-			ms_info="Delay time: ${delay_time} (second)"
-			callsendms delay_time "${ms_info}"
+	# if [[ ${is_recovery} =~ "t" && ${DELAY_MON} == "Y" && $(( ${counter} % ${DELAY_PRE} )) == 0 ]]; then
+	# 	delay_time=`psql -t -c "select trunc(extract(epoch from now() - pg_last_xact_replay_timestamp()));"`
+	# 	if [[ ${delay_time} -ge ${DELAY_ALERT} ]]; then
+	# 		ms_info="Delay time: ${delay_time} (second)"
+	# 		callsendms delay_time "${ms_info}"
+	# 	fi
+	# fi
+	#复制延迟
+	if [[ ${DELAY_MON} == "Y" && $(( ${counter} % ${DELAY_PRE} )) == 0 ]]; then
+		IFS=$'\n'
+		if [[ ${is_recovery} =~ "f" ]]; then
+			for line in `psql -t -c "select application_name,client_addr,COALESCE(trunc(extract(epoch FROM (now() - (now()- replay_lag) ))::numeric),0),trunc(pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn)/1024) replay_delay from pg_stat_replication;"`;do
+				app_name=`echo $line|awk -F "|" '{print $1}'`
+				client_addr=`echo $line|awk -F "|" '{print $2}'`
+				delay_time=`echo $line|awk -F "|" '{print $3}'`
+				delay_size=`echo $line|awk -F "|" '{print $4}'`
+				if [[ ${delay_time} -ge ${DELAY_ALERT} ]]; then
+					ms_info="Send delay to ${app_name}(${client_addr}) Delay time: ${delay_time} second wal fall behind: ${delay_size} kb."
+					callsendms delay_time "${ms_info}"
+				fi
+			done
+		else
+			for line in `psql -t -c "select sender_host,pg_last_wal_replay_lsn(),received_lsn,trunc(pg_wal_lsn_diff(pg_last_wal_replay_lsn(),received_lsn)/1024),trunc(extract(epoch FROM (now() - latest_end_time))::numeric) from pg_stat_wal_receiver;"`;do
+				sender_host=`echo $line|awk -F "|" '{print $1}'`
+				replay_lsn=`echo $line|awk -F "|" '{print $2}'`
+				received_lsn=`echo $line|awk -F "|" '{print $3}'`
+				delay_replay_size=`echo $line|awk -F "|" '{print $4}'`
+				delay_replay_time=`echo $line|awk -F "|" '{print $5}'`
+				same=$(echo ${replay_lsn} | grep "${received_lsn}")
+				if [[ ! ${same} && ${delay_replay_time} -ge ${DELAY_ALERT} ]]; then
+					ms_info="Replay delay from ${sender_host} delay_replay_time: ${delay_replay_time} second secdelay_replay_size: ${delay_replay_size} kb"
+					callsendms delay_time "${ms_info}"
+			fi
+			done
 		fi
+		IFS=$OLD_IFS
 	fi
 	#长事务
 	if [[ ${LONG_TRAN_MON} == "Y" && $(( ${counter} % ${LONG_TRAN_PRE} )) == 0 ]]; then
@@ -103,5 +133,5 @@ else
 	fi
 fi
 let counter+=1
-echo $counter > dbcounters.tmp
+echo $counter > ${current_path}/dbcounters.tmp
 echo `date '+%y-%m-%d %H:%M:%S': `"$0 executed."

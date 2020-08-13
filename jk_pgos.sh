@@ -16,10 +16,10 @@ function callsendms(){
 
 #设置计数器，控制各项监控频率
 if [[ ! -f oscounters.tmp ]]; then
-	echo 0 > oscounters.tmp
+	echo 0 > ${current_path}/oscounters.tmp
 	counter=0
 else
-	counter=`cat oscounters.tmp`
+	counter=`cat ${current_path}/oscounters.tmp`
 	#statements
 fi
 
@@ -59,5 +59,5 @@ if [[ ${FS_USAGE_MON} == "Y" && $(( ${counter} % ${FS_USAGE_PER} )) == 0 ]];then
 	IFS=$OLD_IFS
 fi
 let counter+=1
-echo $counter > oscounters.tmp
+echo $counter > ${current_path}/oscounters.tmp
 echo `date '+%y-%m-%d %H:%M:%S': `"$0 executed."
