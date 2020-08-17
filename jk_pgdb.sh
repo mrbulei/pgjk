@@ -24,13 +24,15 @@ else
 fi
 
 #备份告警
-# if [[ -f ${current_path}/backupflag ]]; then
-# 	ms_info=`cat ${current_path}/backupflag`
-# 	callsendms back_stat ${ms_info}
-# else
-# 	ms_info="Backup not performed"
-# 	callsendms back_stat 
-# fi
+if [[ -f ${current_path}/backupflag && ${BACK_STAT_MON} == "Y" ]]; then
+	ms_info=`cat ${current_path}/backupflag`
+	if [[ ${ms_info} =~ "successful" ]]; then
+		callsendms back_stat "${ms_info}"
+		rm -f ${current_path}/backupflag
+	elif [[ $(( ${counter} % ${BACK_STAT_PER} )) == 0 ]]; then
+		callsendms back_stat "${ms_info}"
+	fi
+fi
 
 ###是否存活
 is_alive=`pg_isready -p ${DBPORT}|grep "accepting"|wc -l `
