@@ -46,11 +46,16 @@ else
 	# echo "pg is ok"
 	#链接数
 	if [[ ${CONN_NUM_MON} == "Y" && $(( ${counter} % ${CONN_NUM_FRE} )) == 0 ]]; then
-		conn_num=`psql -t -q -c "select count(*) from pg_stat_activity;"`
-		if [[ ${conn_num} -ge ${CONN_NUM_ALERT} ]]; then
-			ms_info="Number of connections: ${conn_num}"
-			callsendms conn_num "${ms_info}"
-		fi
+		IFS=$'\n'
+		for line  in `psql -t -q -c "select datname,numbackends from pg_stat_database where datname is not null;"`;do
+			db_name=`echo $line|awk -F "|" '{print $1}'`
+			conn_num=`echo $line|awk -F "|" '{print $2}'`
+			if [[ ${conn_num} -ge ${CONN_NUM_ALERT} ]]; then
+				ms_info="Database :(${db_name}) number of connections: ${conn_num}"
+				callsendms conn_num "${ms_info}"
+			fi
+		done
+		IFS=$OLD_IFS
 		# echo ${conn_num}
 	fi
 	#等待事件
@@ -90,7 +95,7 @@ else
 				fi
 			done
 		else
-			for line in `psql -t -c "select sender_host,pg_last_wal_replay_lsn(),received_lsn,trunc(pg_wal_lsn_diff(pg_last_wal_replay_lsn(),received_lsn)/1024),trunc(extract(epoch FROM (now() - latest_end_time))::numeric) from pg_stat_wal_receiver;"`;do
+			for line in `psql -t -c "select sender_host,pg_last_wal_replay_lsn(),received_lsn,trunc(pg_wal_lsn_diff(received_lsn,pg_last_wal_replay_lsn())/1024),trunc(extract(epoch FROM (now() - latest_end_time))::numeric) from pg_stat_wal_receiver;"`;do
 				sender_host=`echo $line|awk -F "|" '{print $1}'`
 				replay_lsn=`echo $line|awk -F "|" '{print $2}'`
 				received_lsn=`echo $line|awk -F "|" '{print $3}'`
